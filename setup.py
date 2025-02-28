@@ -11,7 +11,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "plex-sync = plex_sync:main:cli",
+            "plex-sync = plex_sync.main:cli",
         ],
     },
 )

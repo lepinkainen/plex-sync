@@ -13,15 +13,15 @@ DEFAULT_CONFIG = {
 
 def get_config_path():
     """Get the path to the config file."""
+    # Check for config in current directory first
+    local_config = Path.cwd() / "config.yml"
+    if local_config.exists():
+        return local_config
+
     # Check for config in user's home directory
     home_config = Path.home() / ".config" / "plex-sync" / "config.yml"
     if home_config.exists():
         return home_config
-
-    # Check for config in current directory
-    local_config = Path.cwd() / "config.yml"
-    if local_config.exists():
-        return local_config
 
     # Check for config in XDG_CONFIG_HOME
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
