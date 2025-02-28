@@ -1,0 +1,13 @@
+plex:
+  url: http://localhost:32400
+  token: "ABBA1234"
+
+sync:
+  defaults:
+    episode_limit: 2 # Default number of latest episodes to sync for all shows
+  "TV Shows":
+    - name: "Example Show"
+      episode_limit: 3 # Override for this specific show
+  "Anime":
+    - "Example Anime" # Will use the default episode limit
+
