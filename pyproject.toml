@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "plex-sync"
+version = "0.1.0"
+description = "A tool to manage and sync Plex content"
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+packages = [{include = "plex_sync"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+plexapi = "^4.15.15"
+click = "^8.1.7"
+pyyaml = "^6.0.2"
+
+[tool.poetry.scripts]
+plex-sync = "plex_sync.main:cli"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
