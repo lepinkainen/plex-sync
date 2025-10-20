@@ -7,7 +7,12 @@ DEFAULT_CONFIG = {
     "plex": {
         "url": "http://localhost:32400",
         "token": "",
-    }
+    },
+    "rsync": {
+        "server_path": "",
+        "target": "",
+        "options": "-avP",
+    },
 }
 
 
@@ -50,10 +55,13 @@ def load_config():
             print(f"Warning: Error reading config file: {e}")
 
     # Override with environment variables if present
-    if os.environ.get("PLEX_URL"):
-        config["plex"]["url"] = os.environ.get("PLEX_URL")
-    if os.environ.get("PLEX_TOKEN"):
-        config["plex"]["token"] = os.environ.get("PLEX_TOKEN")
+    plex_url = os.environ.get("PLEX_URL")
+    if plex_url:
+        config["plex"]["url"] = plex_url
+
+    plex_token = os.environ.get("PLEX_TOKEN")
+    if plex_token:
+        config["plex"]["token"] = plex_token
 
     return config
 
