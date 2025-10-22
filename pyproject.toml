@@ -1,23 +1,22 @@
-[tool.poetry]
+[project]
 name = "plex-sync"
 version = "0.1.0"
 description = "A tool to manage and sync Plex content"
-authors = ["Your Name <you@example.com>"]
+authors = [{name = "Your Name", email = "you@example.com"}]
 readme = "README.md"
-packages = [{include = "plex_sync"}]
+requires-python = ">=3.12"
+dependencies = [
+    "plexapi>=4.15.15",
+    "click>=8.1.7",
+    "pyyaml>=6.0.2",
+    "tabulate>=0.9.0",
+    "textual>=6.4.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.12"
-plexapi = "^4.15.15"
-click = "^8.1.7"
-pyyaml = "^6.0.2"
-tabulate = "^0.9.0"
-textual = "^6.4.0"
-
-[tool.poetry.scripts]
+[project.scripts]
 plex-sync = "plex_sync.main:cli"
 plex-movie-size = "plex_sync.movie_size:cli"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
