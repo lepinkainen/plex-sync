@@ -8,6 +8,9 @@ import subprocess
 import sys
 import json
 from pathlib import Path
+from textual.app import App, ComposeResult
+from textual.widgets import DataTable
+from textual.containers import Container
 
 
 @click.group()
@@ -68,23 +71,77 @@ def library(name):
         exit(1)
 
 
+class LibraryListApp(App):
+    """Textual app for displaying library content table."""
+    
+    def __init__(self, content_data, content_type):
+        super().__init__()
+        self.content_data = content_data
+        self.content_type = content_type
+    
+    def compose(self) -> ComposeResult:
+        yield Container(
+            DataTable(id="content_table")
+        )
+    
+    def on_mount(self) -> None:
+        table = self.query_one("#content_table", DataTable)
+        table.cursor_type = "row"
+        
+        if self.content_type == "show":
+            table.add_columns("Show", "Total Episodes", "Unwatched", "% Unwatched")
+            
+            for show_data in self.content_data:
+                show_title = show_data["title"]
+                total_episodes = show_data["total_episodes"]
+                unwatched_episodes = show_data["unwatched_episodes"]
+                unwatched_percentage = (unwatched_episodes / total_episodes * 100) if total_episodes > 0 else 0
+                
+                table.add_row(
+                    show_title,
+                    str(total_episodes),
+                    str(unwatched_episodes),
+                    f"{unwatched_percentage:.1f}%"
+                )
+        elif self.content_type == "movie":
+            table.add_columns("Movie", "Year", "Duration")
+            
+            for movie_data in self.content_data:
+                movie_title = movie_data["title"]
+                year = str(movie_data.get("year", ""))
+                duration = movie_data.get("duration", "")
+                
+                table.add_row(movie_title, year, duration)
+
+
 def print_unwatched_movies(movies):
-    """Print a list of unwatched movies."""
-    unwatched_count = 0
+    """Display unwatched movies in a table."""
+    movies_data = []
     for movie in movies:
         if movie.isWatched is False:
-            click.echo(f"{movie.title}")
-            unwatched_count += 1
-
-    if unwatched_count == 0:
+            duration_display = ""
+            if hasattr(movie, 'duration') and movie.duration:
+                hours = movie.duration // (1000 * 60 * 60)
+                minutes = (movie.duration % (1000 * 60 * 60)) // (1000 * 60)
+                duration_display = f"{hours}h {minutes}m"
+            
+            movies_data.append({
+                "title": movie.title,
+                "year": movie.year,
+                "duration": duration_display
+            })
+    
+    if not movies_data:
         click.echo("No unwatched movies found.")
-    else:
-        click.echo(f"Total unwatched movies: {unwatched_count}")
+        return
+    
+    app = LibraryListApp(movies_data, "movie")
+    app.run()
 
 
 def print_unwatched_shows(shows):
-    """Print a list of shows with unwatched episodes."""
-    shows_with_unwatched = 0
+    """Display shows with unwatched episodes in a table."""
+    shows_data = []
     for show in shows:
         episodes = show.episodes()
         unwatched_episodes = [
@@ -92,14 +149,19 @@ def print_unwatched_shows(shows):
         ]
         if len(unwatched_episodes) == 0:
             continue
-
-        click.echo(
-            f"{show.title} - {len(episodes)} episodes - {len(unwatched_episodes)} unwatched"
-        )
-        shows_with_unwatched += 1
-
-    if shows_with_unwatched == 0:
+        
+        shows_data.append({
+            "title": show.title,
+            "total_episodes": len(episodes),
+            "unwatched_episodes": len(unwatched_episodes)
+        })
+    
+    if not shows_data:
         click.echo("No shows with unwatched episodes found.")
+        return
+    
+    app = LibraryListApp(shows_data, "show")
+    app.run()
 
 
 @list.command()

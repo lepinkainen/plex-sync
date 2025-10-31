@@ -42,84 +42,44 @@ class MovieSizeApp(App):
             if hasattr(movie, 'duration') and movie.duration:
                 hours = movie.duration // (1000 * 60 * 60)
                 minutes = (movie.duration % (1000 * 60 * 60)) // (1000 * 60)
-                duration_display = f"{hours}h {minutes}m"
+                duration_display = f"{hours}h {minutes:02d}m"
                 duration_minutes = movie.duration / (1000 * 60)
-            
+
             # Calculate GB per minute
             gb_per_min_display = ""
+            gb_per_min_value = 0
             if duration_minutes > 0:
                 gb_per_min_value = size_gb / duration_minutes
-                gb_per_min_display = f"{gb_per_min_value:.3f}"
-            
+                gb_per_min_display = f"{gb_per_min_value:07.3f}"
+
             movie_title = f"{movie.title} ({movie.year})" if movie.year else movie.title
-            
-            # Add row
+
+            # Add row with zero-padded numeric values for proper sorting
             table.add_row(
-                str(i),
+                f"{i:03d}",
                 library_name,
                 movie_title,
-                duration_display,
-                f"{size_gb:.2f}",
-                gb_per_min_display
+                duration_display or "   0h 00m",
+                f"{size_gb:09.2f}",
+                gb_per_min_display or "000.000"
             )
-    
-    def on_data_table_header_clicked(self, event: DataTable.HeaderClicked) -> None:
-        """Handle column header clicks for sorting."""
-        table = self.query_one("#movie_table", DataTable)
-        
-        # Map column keys to data indices
-        column_map = {
-            "Rank": 0,
-            "Library": 1, 
-            "Movie": 2,
-            "Duration": 3,
-            "Size (GB)": 4,
-            "GB/min": 5
-        }
-        
-        if event.column_key in column_map:
-            col_index = column_map[event.column_key]
-            
-            # Get current data and sort it
-            current_data = []
-            for row_key in table.rows:
-                row_data = table.get_row(row_key)
-                current_data.append((row_key, row_data))
-            
-            # Sort based on column type
-            if event.column_key == "Rank":
-                current_data.sort(key=lambda x: int(x[1][col_index]))
-            elif event.column_key in ["Size (GB)", "GB/min", "Duration"]:
-                # For numeric columns, extract the numeric value
-                current_data.sort(key=lambda x: float(self._extract_numeric(x[1][col_index])))
-            else:
-                # For text columns, sort alphabetically
-                current_data.sort(key=lambda x: x[1][col_index].lower())
-            
-            # Clear and repopulate table in sorted order
-            table.clear()
-            table.add_columns("Rank", "Library", "Movie", "Duration", "Size (GB)", "GB/min")
-            
-            for row_key, row_data in current_data:
-                table.add_row(*row_data)
-    
-    def _extract_numeric(self, value: str) -> float:
-        """Extract numeric value from formatted string."""
-        if "GB" in value:
-            return float(value.replace(" GB", ""))
-        elif "h" in value and "m" in value:
-            # Convert duration string to minutes
-            parts = value.split()
-            hours = int(parts[0].replace("h", ""))
-            minutes = int(parts[1].replace("m", ""))
-            return hours * 60 + minutes
-        else:
-            return float(value) if value else 0
 
 
 @click.command()
-def cli():
-    """List top 20 largest watched movies by GB used."""
+@click.option(
+    "--limit",
+    "-n",
+    default=50,
+    type=int,
+    help="Number of movies to show (default: 50)"
+)
+@click.option(
+    "--unwatched",
+    is_flag=True,
+    help="Show unwatched movies instead of watched"
+)
+def cli(limit, unwatched):
+    """List largest movies by size (watched by default, use --unwatched for unwatched)."""
     try:
         server = get_plex_server()
 
@@ -132,13 +92,14 @@ def cli():
             click.echo("No movie libraries found.")
             return
 
-        # Collect all watched movies with their sizes
-        watched_movies = []
+        # Collect movies with their sizes based on watch status
+        filter_type = "unwatched" if unwatched else "watched"
+        movies_list = []
 
         for section in movie_sections:
-            click.echo(f"Scanning library: {section.title}")
+            click.echo(f"Scanning library: {section.title} ({filter_type} movies)")
             for movie in section.all():
-                if movie.isWatched and movie.media:
+                if movie.isWatched != unwatched and movie.media:
                     # Get total size in bytes from all media parts
                     total_size = sum(
                         part.size
@@ -147,14 +108,14 @@ def cli():
                         if hasattr(part, "size")
                     )
                     if total_size > 0:
-                        watched_movies.append((movie, total_size))
+                        movies_list.append((movie, total_size))
 
-        # Sort by size (largest first) and take top 50
-        watched_movies.sort(key=lambda x: x[1], reverse=True)
-        top_movies = watched_movies[:50]
+        # Sort by size (largest first) and take top N
+        movies_list.sort(key=lambda x: x[1], reverse=True)
+        top_movies = movies_list[:limit]
 
         if not top_movies:
-            click.echo("No watched movies with size information found.")
+            click.echo(f"No {filter_type} movies with size information found.")
             return
 
         # Run Textual app
