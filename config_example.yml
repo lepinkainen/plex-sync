@@ -2,6 +2,18 @@ plex:
   url: http://localhost:32400
   token: "ABBA1234"
 
+# Radarr configuration for movie management
+radarr:
+  enabled: true
+  url: http://localhost:7878
+  api_key: "your_radarr_api_key_here"
+
+# Sonarr configuration for TV show management
+sonarr:
+  enabled: true
+  url: http://localhost:8989
+  api_key: "your_sonarr_api_key_here"
+
 sync:
   defaults:
     episode_limit: 2 # Default number of latest episodes to sync for all shows
