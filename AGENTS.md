@@ -1,25 +1,32 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-
-Core source lives in `plex_sync/`. `main.py` defines the Click-based CLI entry point exposed as `plex-sync`, while `config.py` handles loading YAML settings. Root-level `config_example.yml` and `config.yml` provide local defaults; external runs read from `~/.config/plex-sync/config.yml`. Keep new modules in `plex_sync/` and pair behavioural changes with fixtures or helpers under `tests/`. Temporary sync metadata is stored in `last_sync.json`—do not rely on it for logic.
+- Core CLI logic lives in `plex_sync/`; `main.py` exposes the Click entry point (`plex-sync`) and `config.py` loads YAML settings.
+- Tests reside in `tests/` and should mirror CLI verbs (e.g., `test_list_libraries.py`).
+- Example configs sit at the repo root (`config_example.yml`, `config.yml`); external runs read from `~/.config/plex-sync/config.yml`.
+- Temporary sync artifacts such as `last_sync.json` support diagnostics only—do not drive logic from them.
 
 ## Build, Test, and Development Commands
-
-Install dependencies with UV: `uv sync`. Run the tool locally via `uv run plex-sync --help` or targeted commands such as `uv run plex-sync list libraries`. Execute the current test suite with `uv run pytest`; add development dependencies as needed.
+- `uv sync` installs and updates project dependencies.
+- `uv run plex-sync --help` shows available CLI verbs; `uv run plex-sync list libraries` is a quick smoke test.
+- `uv run pytest -q` executes the suite; add `-k <pattern>` for targeted runs.
+- `python -m compileall plex_sync` performs a fast syntax check before larger refactors.
 
 ## Coding Style & Naming Conventions
-
-This codebase targets Python 3.12 and follows standard 4-space indentation. Keep functions small, prefer descriptive snake_case names, and align Click option names with existing kebab-case CLI flags. Use type hints for new public functions and meaningful docstrings when behaviour is non-obvious. Run `python -m compileall plex_sync` before larger refactors if you need a quick syntax check.
+- Target Python 3.12 with 4-space indentation and descriptive snake_case names.
+- Align Click flag names with existing kebab-case patterns (e.g., `--dry-run`).
+- Type-hint new public functions; add docstrings when behaviour is non-obvious.
+- Keep modules small; place new helpers under `plex_sync/` and share fixtures via `tests/conftest.py`.
 
 ## Testing Guidelines
-
-Tests reside in `tests/` and are expected to use pytest. Name new files `test_<feature>.py`, mirror CLI verbs in test function names, and cover both success and failure paths. When adding network-dependent logic, isolate Plex API calls behind helpers so you can stub them. Ensure `uv run pytest -q` passes before raising a PR and document any intentionally skipped checks.
+- Use pytest for all tests; name files `test_<feature>.py` and functions after the CLI verb being exercised.
+- Cover both success and failure paths, stubbing Plex API calls behind helper abstractions.
+- Ensure `uv run pytest -q` passes before sending a PR; document intentionally skipped checks in the PR description.
 
 ## Commit & Pull Request Guidelines
+- Follow the existing history style: concise, imperative summaries such as `Add sync limiting per episode`; wrap commit body text at ~72 characters.
+- Pull requests should describe motivation, list user-facing changes, reference issues (`Fixes #123`), and capture validation steps or CLI output when behaviour changes.
 
-Existing history uses concise, imperative commit summaries (for example, `Add sync + limiting per episode`). Follow the same format, keep body paragraphs wrapped at ~72 characters, and reference GitHub issues when relevant (`Fixes #123`). Pull requests should describe the motivation, summarize user-facing changes, list validation steps, and include screenshots or sample CLI output when UI-visible behaviour changes.
-
-## Configuration Tips
-
-Never commit real tokens or server URLs. Use `uv run plex-sync config` to generate a local template and `uv run plex-sync config --show` to confirm the active path. When sharing repro steps, redact secrets and point contributors to the sample `config_example.yml`.
+## Security & Configuration Tips
+- Never commit real tokens or server URLs; rely on `uv run plex-sync config` to scaffold safe local configs.
+- Confirm the active configuration with `uv run plex-sync config --show`, and redact secrets in shared logs or issue reports.

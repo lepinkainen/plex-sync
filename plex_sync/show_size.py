@@ -26,6 +26,7 @@ class ShowSizeApp(App):
     BINDINGS = [
         Binding("space", "toggle_select", "Select/Deselect", show=True),
         Binding("d", "delete_selected", "Delete Selected", show=True),
+        Binding("s", "toggle_view", "Toggle Season/Show View", show=True),
         Binding("q", "quit", "Quit", show=True),
     ]
 
@@ -35,6 +36,7 @@ class ShowSizeApp(App):
         self.sonarr_client = sonarr_client
         self.selected_rows = set()
         self.row_to_show = {}  # Maps row index to show object
+        self.view_mode = "show"  # "show" or "season"
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -47,11 +49,38 @@ class ShowSizeApp(App):
         table = self.query_one("#show_table", DataTable)
         table.cursor_type = "row"
 
-        # Add columns
-        table.add_columns("✓", "Rank", "Library", "Show", "Episodes", "Size (GB)", "GB/ep", "Rating", "Audience")
+        # Populate the table (this adds columns and data)
+        self.populate_table()
 
-        # Store the data with sortable values
-        for i, (show, size_bytes, episode_count) in enumerate(self.shows_data, 1):
+    def populate_table(self):
+        """Populate the table with shows/seasons data."""
+        table = self.query_one("#show_table", DataTable)
+        table.clear(columns=True)  # Clear both rows and columns
+        self.row_to_show.clear()
+        self.selected_rows.clear()
+
+        # Add columns based on view mode
+        if self.view_mode == "show":
+            table.add_columns("✓", "Rank", "Library", "Show", "Episodes", "Size (GB)", "GB/ep", "Rating", "Audience")
+        else:  # season view
+            table.add_columns("✓", "Rank", "Library", "Show - Season", "Episodes", "Size (GB)", "GB/ep")
+
+        # Build display list based on view mode
+        display_items = []
+
+        for show, size_bytes, episode_count, season_data in self.shows_data:
+            if self.view_mode == "show":
+                display_items.append((show, size_bytes, episode_count, None, season_data))
+            else:  # season mode
+                for season_num, (season_size, season_ep_count) in season_data.items():
+                    display_items.append((show, season_size, season_ep_count, season_num, season_data))
+
+        # Sort by size
+        display_items.sort(key=lambda x: x[1], reverse=True)
+
+        # Add rows to table
+        row_key = 0
+        for i, (show, size_bytes, episode_count, season_num, season_data) in enumerate(display_items, 1):
             size_gb = size_bytes / (1024**3)
             library_name = (
                 show.section().title
@@ -63,47 +92,74 @@ class ShowSizeApp(App):
             gb_per_episode_display = ""
             if episode_count > 0:
                 gb_per_episode = size_gb / episode_count
-                gb_per_episode_display = f"{gb_per_episode:07.3f}"
+                gb_per_episode_display = f"{gb_per_episode:.3f}"
 
-            show_title = f"{show.title} ({show.year})" if hasattr(show, 'year') and show.year else show.title
+            if self.view_mode == "show":
+                show_title = f"{show.title} ({show.year})" if hasattr(show, 'year') and show.year else show.title
 
-            # Get ratings
-            critic_rating = ""
-            if hasattr(show, 'rating') and show.rating:
-                critic_rating = f"{show.rating:.1f}"
+                # Get ratings
+                critic_rating = ""
+                if hasattr(show, 'rating') and show.rating:
+                    critic_rating = f"{show.rating:.1f}"
 
-            audience_rating = ""
-            if hasattr(show, 'audienceRating') and show.audienceRating:
-                audience_rating = f"{show.audienceRating:.1f}"
+                audience_rating = ""
+                if hasattr(show, 'audienceRating') and show.audienceRating:
+                    audience_rating = f"{show.audienceRating:.1f}"
 
-            # Add row with zero-padded numeric values for proper sorting
-            row_key = table.add_row(
-                " ",  # Checkbox column
-                f"{i:03d}",
-                library_name,
-                show_title,
-                f"{episode_count:04d}",
-                f"{size_gb:09.2f}",
-                gb_per_episode_display or "000.000",
-                critic_rating or "N/A",
-                audience_rating or "N/A"
-            )
+                # Add row with zero-padded numeric values for proper sorting
+                table.add_row(
+                    " ",  # Checkbox column
+                    f"{i:03d}",
+                    library_name,
+                    show_title,
+                    f"{episode_count:04d}",
+                    f"{size_gb:.2f}",
+                    gb_per_episode_display or "0.000",
+                    critic_rating or "N/A",
+                    audience_rating or "N/A"
+                )
+            else:  # season view
+                # Handle None season numbers (specials/extras)
+                if season_num is None:
+                    show_title = f"{show.title} - Specials"
+                else:
+                    show_title = f"{show.title} - S{season_num:02d}"
+                table.add_row(
+                    " ",  # Checkbox column
+                    f"{i:03d}",
+                    library_name,
+                    show_title,
+                    f"{episode_count:04d}",
+                    f"{size_gb:.2f}",
+                    gb_per_episode_display or "0.000"
+                )
+
             # Store show reference for this row
-            self.row_to_show[row_key] = show
+            self.row_to_show[row_key] = (show, season_num)
+            row_key += 1
 
     def action_toggle_select(self) -> None:
         """Toggle selection of the current row."""
         table = self.query_one("#show_table", DataTable)
         if table.cursor_row is not None:
-            row_key = table.cursor_row
-            if row_key in self.selected_rows:
-                self.selected_rows.remove(row_key)
-                # Update the checkbox column (first column, index 0)
-                table.update_cell(row_key, 0, " ")
-            else:
-                self.selected_rows.add(row_key)
-                # Update the checkbox column (first column, index 0)
-                table.update_cell(row_key, 0, "✓")
+            row_index = table.cursor_row
+            # Get the actual row key from the ordered rows
+            row_keys = list(table.rows.keys())
+            # Get column key for the checkbox column (first column)
+            column_keys = list(table.columns.keys())
+
+            if row_index < len(row_keys) and len(column_keys) > 0:
+                row_key = row_keys[row_index]
+                checkbox_column_key = column_keys[0]
+
+                if row_key in self.selected_rows:
+                    self.selected_rows.remove(row_key)
+                    # Update the checkbox column (first column)
+                    table.update_cell(row_key, checkbox_column_key, " ")
+                else:
+                    self.selected_rows.add(row_key)
+                    # Update the checkbox column (first column)
+                    table.update_cell(row_key, checkbox_column_key, "✓")
 
     def action_delete_selected(self) -> None:
         """Delete selected TV shows via Sonarr API."""
@@ -115,8 +171,18 @@ class ShowSizeApp(App):
             self.notify("Sonarr client not configured", severity="error")
             return
 
-        # Get show objects for selected rows
-        selected_shows = [self.row_to_show[row_key] for row_key in self.selected_rows if row_key in self.row_to_show]
+        # Get show objects for selected rows (only shows, not individual seasons)
+        selected_shows = []
+        for row_key in self.selected_rows:
+            if row_key in self.row_to_show:
+                show, season_num = self.row_to_show[row_key]
+                # Only delete entire shows, not individual seasons
+                if show not in selected_shows:
+                    selected_shows.append(show)
+
+        if not selected_shows:
+            self.notify("No shows selected", severity="warning")
+            return
 
         self.notify(f"Deleting {len(selected_shows)} shows via Sonarr...", severity="information")
 
@@ -134,14 +200,20 @@ class ShowSizeApp(App):
         self.selected_rows.clear()
         self.notify("Deletion complete", severity="success")
 
+    def action_toggle_view(self) -> None:
+        """Toggle between show view and season view."""
+        self.view_mode = "season" if self.view_mode == "show" else "show"
+        self.populate_table()
+        self.notify(f"Switched to {self.view_mode} view")
+
 
 @click.command()
 @click.option(
     "--limit",
     "-n",
-    default=50,
+    default=100,
     type=int,
-    help="Number of shows to show (default: 50)"
+    help="Number of shows to show (default: 100)"
 )
 @click.option(
     "--watched",
@@ -199,19 +271,44 @@ def cli(limit, watched):
                         continue
 
                 if episodes:
-                    # Get total size in bytes from all episode media parts
+                    # Get total size and per-season breakdown
                     total_size = 0
-                    for episode in episodes:
-                        if episode.media:
-                            total_size += sum(
-                                part.size
-                                for media in episode.media
-                                for part in media.parts
-                                if hasattr(part, "size")
-                            )
+                    total_episode_count = 0
+                    season_data = {}
+
+                    try:
+                        for season in show.seasons():
+                            season_size = 0
+                            season_ep_count = 0
+                            for episode in season.episodes():
+                                if episode.media:
+                                    episode_size = sum(
+                                        part.size
+                                        for media in episode.media
+                                        for part in media.parts
+                                        if hasattr(part, "size")
+                                    )
+                                    season_size += episode_size
+                                    season_ep_count += 1
+
+                            if season_size > 0:
+                                season_data[season.seasonNumber] = (season_size, season_ep_count)
+                                total_size += season_size
+                                total_episode_count += season_ep_count
+                    except AttributeError:
+                        # Fallback for shows without proper season structure
+                        for episode in episodes:
+                            if episode.media:
+                                total_size += sum(
+                                    part.size
+                                    for media in episode.media
+                                    for part in media.parts
+                                    if hasattr(part, "size")
+                                )
+                        total_episode_count = len(episodes)
 
                     if total_size > 0:
-                        shows_list.append((show, total_size, len(episodes)))
+                        shows_list.append((show, total_size, total_episode_count, season_data))
 
         # Sort by size (largest first) and take top N
         shows_list.sort(key=lambda x: x[1], reverse=True)

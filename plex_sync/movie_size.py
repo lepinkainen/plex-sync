@@ -42,7 +42,7 @@ class MovieSizeApp(App):
             DataTable(id="movie_table")
         )
         yield Footer()
-    
+
     def on_mount(self) -> None:
         table = self.query_one("#movie_table", DataTable)
         table.cursor_type = "row"
@@ -58,7 +58,7 @@ class MovieSizeApp(App):
                 if hasattr(movie, "section") and movie.section()
                 else "Unknown"
             )
-            
+
             # Format duration (milliseconds to hours:minutes)
             duration_display = ""
             duration_minutes = 0
@@ -73,7 +73,7 @@ class MovieSizeApp(App):
             gb_per_min_value = 0
             if duration_minutes > 0:
                 gb_per_min_value = size_gb / duration_minutes
-                gb_per_min_display = f"{gb_per_min_value:07.3f}"
+                gb_per_min_display = f"{gb_per_min_value:.3f}"
 
             movie_title = f"{movie.title} ({movie.year})" if movie.year else movie.title
 
@@ -93,8 +93,8 @@ class MovieSizeApp(App):
                 library_name,
                 movie_title,
                 duration_display or "   0h 00m",
-                f"{size_gb:09.2f}",
-                gb_per_min_display or "000.000",
+                f"{size_gb:.2f}",
+                gb_per_min_display or "0.000",
                 critic_rating or "N/A",
                 audience_rating or "N/A"
             )
@@ -105,15 +105,24 @@ class MovieSizeApp(App):
         """Toggle selection of the current row."""
         table = self.query_one("#movie_table", DataTable)
         if table.cursor_row is not None:
-            row_key = table.cursor_row
-            if row_key in self.selected_rows:
-                self.selected_rows.remove(row_key)
-                # Update the checkbox column (first column, index 0)
-                table.update_cell(row_key, 0, " ")
-            else:
-                self.selected_rows.add(row_key)
-                # Update the checkbox column (first column, index 0)
-                table.update_cell(row_key, 0, "✓")
+            row_index = table.cursor_row
+            # Get the actual row key from the ordered rows
+            row_keys = list(table.rows.keys())
+            # Get column key for the checkbox column (first column)
+            column_keys = list(table.columns.keys())
+
+            if row_index < len(row_keys) and len(column_keys) > 0:
+                row_key = row_keys[row_index]
+                checkbox_column_key = column_keys[0]
+
+                if row_key in self.selected_rows:
+                    self.selected_rows.remove(row_key)
+                    # Update the checkbox column (first column)
+                    table.update_cell(row_key, checkbox_column_key, " ")
+                else:
+                    self.selected_rows.add(row_key)
+                    # Update the checkbox column (first column)
+                    table.update_cell(row_key, checkbox_column_key, "✓")
 
     def action_delete_selected(self) -> None:
         """Delete selected movies via Radarr API."""
@@ -149,9 +158,9 @@ class MovieSizeApp(App):
 @click.option(
     "--limit",
     "-n",
-    default=50,
+    default=100,
     type=int,
-    help="Number of movies to show (default: 50)"
+    help="Number of movies to show (default: 100)"
 )
 @click.option(
     "--unwatched",
