@@ -4,6 +4,8 @@ from plexapi.exceptions import Unauthorized
 from . import config
 from .sonarr import SonarrClient
 import sys
+from datetime import datetime
+from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Footer, Header
 from textual.containers import Container
@@ -26,6 +28,7 @@ class ShowSizeApp(App):
     BINDINGS = [
         Binding("space", "toggle_select", "Select/Deselect", show=True),
         Binding("d", "delete_selected", "Delete Selected", show=True),
+        Binding("r", "generate_reencode", "Generate Re-encode Script", show=True),
         Binding("s", "toggle_view", "Toggle Season/Show View", show=True),
         Binding("q", "quit", "Quit", show=True),
     ]
@@ -199,6 +202,152 @@ class ShowSizeApp(App):
         # Clear selections after deletion
         self.selected_rows.clear()
         self.notify("Deletion complete", severity="success")
+
+    def action_generate_reencode(self) -> None:
+        """Generate ffmpeg re-encode script for selected shows/seasons."""
+        if not self.selected_rows:
+            self.notify("No items selected", severity="warning")
+            return
+
+        # Collect file paths based on view mode
+        file_paths = []
+
+        for row_key in self.selected_rows:
+            if row_key not in self.row_to_show:
+                continue
+
+            show, season_num = self.row_to_show[row_key]
+
+            try:
+                if self.view_mode == "show" or season_num is None:
+                    # Get all episodes from the show
+                    episodes = show.episodes()
+                else:
+                    # Get episodes from specific season
+                    season = show.season(season_num)
+                    episodes = season.episodes()
+
+                # Extract file paths from episodes
+                for episode in episodes:
+                    if episode.media:
+                        for media in episode.media:
+                            for part in media.parts:
+                                if hasattr(part, "file") and part.file:
+                                    file_paths.append(part.file)
+
+            except Exception as e:
+                self.notify(f"Error collecting files for {show.title}: {str(e)}", severity="error")
+                continue
+
+        if not file_paths:
+            self.notify("No file paths found for selected items", severity="warning")
+            return
+
+        # Generate script
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        script_path = f"reencode_shows_{timestamp}.sh"
+
+        try:
+            script_content = self._generate_ffmpeg_script(file_paths)
+            with open(script_path, 'w') as f:
+                f.write(script_content)
+
+            # Make script executable
+            Path(script_path).chmod(0o755)
+
+            self.notify(f"Generated script: {script_path} ({len(file_paths)} files)", severity="success")
+        except Exception as e:
+            self.notify(f"Error generating script: {str(e)}", severity="error")
+
+    def _generate_ffmpeg_script(self, file_paths):
+        """Generate bash script content with ffmpeg re-encoding commands."""
+        script = """#!/bin/bash
+# FFmpeg re-encoding script for Plex media
+# Generated: {timestamp}
+#
+# This script uses AMD VAAPI hardware acceleration to re-encode videos
+# to H.265/HEVC with quality preset qp=28 for significant size reduction
+# while maintaining good quality.
+#
+# Audio streams are copied without re-encoding to preserve quality.
+# Originals are replaced only after successful encoding and verification.
+
+set -e  # Exit on error
+
+TOTAL_FILES={total_files}
+CURRENT=0
+
+# Color codes for output
+GREEN='\\033[0;32m'
+YELLOW='\\033[1;33m'
+RED='\\033[0;31m'
+NC='\\033[0m' # No Color
+
+echo "Starting re-encode of $TOTAL_FILES files..."
+echo ""
+
+""".format(
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            total_files=len(file_paths)
+        )
+
+        for i, file_path in enumerate(file_paths, 1):
+            # Escape single quotes in file paths
+            safe_path = file_path.replace("'", "'\\''")
+
+            script += f"""
+# File {i}/{len(file_paths)}
+CURRENT=$((CURRENT + 1))
+echo "${{YELLOW}}[$CURRENT/$TOTAL_FILES]${{NC}} Processing: '{safe_path}'"
+
+INPUT_FILE='{safe_path}'
+TEMP_FILE="${{INPUT_FILE}}.tmp.mkv"
+
+# Check if input file exists
+if [ ! -f "$INPUT_FILE" ]; then
+    echo "${{RED}}ERROR:${{NC}} Input file not found, skipping"
+    continue
+fi
+
+# Re-encode with VAAPI hardware acceleration
+if ffmpeg -y \\
+    -vaapi_device /dev/dri/renderD128 \\
+    -i "$INPUT_FILE" \\
+    -vf 'format=nv12,hwupload' \\
+    -c:v hevc_vaapi \\
+    -qp 28 \\
+    -c:a copy \\
+    -c:s copy \\
+    "$TEMP_FILE"; then
+
+    # Verify the output file is valid
+    if ffprobe -v error "$TEMP_FILE" >/dev/null 2>&1; then
+        # Get file sizes for comparison
+        ORIGINAL_SIZE=$(stat -c%s "$INPUT_FILE")
+        NEW_SIZE=$(stat -c%s "$TEMP_FILE")
+        REDUCTION=$(echo "scale=1; (1 - $NEW_SIZE / $ORIGINAL_SIZE) * 100" | bc)
+
+        echo "${{GREEN}}SUCCESS:${{NC}} Size reduction: ${{REDUCTION}}%"
+
+        # Replace original with re-encoded file
+        mv "$TEMP_FILE" "$INPUT_FILE"
+    else
+        echo "${{RED}}ERROR:${{NC}} Verification failed, keeping original"
+        rm -f "$TEMP_FILE"
+    fi
+else
+    echo "${{RED}}ERROR:${{NC}} Encoding failed, keeping original"
+    rm -f "$TEMP_FILE"
+fi
+
+echo ""
+"""
+
+        script += """
+echo "${GREEN}Re-encoding complete!${NC}"
+"""
+
+        return script
 
     def action_toggle_view(self) -> None:
         """Toggle between show view and season view."""
