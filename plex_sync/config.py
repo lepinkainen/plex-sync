@@ -13,6 +13,16 @@ DEFAULT_CONFIG = {
         "target": "",
         "options": "-avP",
     },
+    "radarr": {
+        "url": "",
+        "api_key": "",
+        "enabled": False,
+    },
+    "sonarr": {
+        "url": "",
+        "api_key": "",
+        "enabled": False,
+    },
 }
 
 
